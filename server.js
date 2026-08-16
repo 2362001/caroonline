@@ -237,6 +237,45 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('request_undo', () => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms.has(roomId)) return;
+    const room = rooms.get(roomId);
+    if (room.status !== 'playing' || room.moveHistory.length === 0) return;
+
+    socket.to(roomId).emit('undo_requested', {
+      requesterRole: socket.role,
+      requesterName: socket.role === 'X' ? room.players.X?.name : room.players.O?.name
+    });
+  });
+
+  socket.on('accept_undo', () => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms.has(roomId)) return;
+    const room = rooms.get(roomId);
+    if (room.status !== 'playing' || room.moveHistory.length === 0) return;
+
+    const popCount = room.moveHistory.length >= 2 ? 2 : 1;
+    for (let i = 0; i < popCount; i++) {
+      const last = room.moveHistory.pop();
+      if (last) {
+        room.board[last.row][last.col] = null;
+      }
+    }
+
+    room.lastMove = room.moveHistory.length > 0 ? room.moveHistory[room.moveHistory.length - 1] : null;
+    room.turn = room.moveHistory.length % 2 === 0 ? 'X' : 'O';
+
+    io.to(roomId).emit('room_updated', getRoomState(room));
+    io.to(roomId).emit('system_message', { text: `Nước cờ trước đã được rút lại!` });
+  });
+
+  socket.on('send_emoji', ({ emoji }) => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms.has(roomId)) return;
+    io.to(roomId).emit('emoji_reaction', { emoji, senderRole: socket.role });
+  });
+
   socket.on('send_chat', ({ message }) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms.has(roomId) || !message.trim()) return;

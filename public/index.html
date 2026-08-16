@@ -99,6 +99,12 @@
 
         <!-- In-game Actions -->
         <div class="action-panel">
+          <button id="btn-undo" class="btn btn-action btn-undo" disabled title="Xin đi lại nước trước">
+            <i class="fa-solid fa-rotate-left"></i> Xin Đi Lại
+          </button>
+          <button id="btn-hint" class="btn btn-action btn-hint" title="Gợi ý nước đi từ Máy AI">
+            <i class="fa-solid fa-lightbulb"></i> Gợi Ý
+          </button>
           <button id="btn-rematch" class="btn btn-action btn-rematch" disabled>
             <i class="fa-solid fa-rotate-right"></i> Chơi Lại Ván Mới
           </button>
@@ -128,6 +134,17 @@
           <div class="board" id="caro-board">
             <!-- Board cells will be rendered dynamically by JavaScript -->
           </div>
+        </div>
+
+        <!-- Quick Emoji Reactions Bar -->
+        <div class="emoji-bar" id="emoji-bar">
+          <button class="emoji-btn" data-emoji="😂">😂</button>
+          <button class="emoji-btn" data-emoji="💥">💥</button>
+          <button class="emoji-btn" data-emoji="😱">😱</button>
+          <button class="emoji-btn" data-emoji="🔥">🔥</button>
+          <button class="emoji-btn" data-emoji="👏">👏</button>
+          <button class="emoji-btn" data-emoji="😭">😭</button>
+          <button class="emoji-btn" data-emoji="👑">👑</button>
         </div>
       </section>
 

@@ -3,6 +3,9 @@
  * Features:
  * 1. Dual Network Engine: Socket.io Server & PeerJS WebRTC P2P (For Vercel/Netlify static hosting)
  * 2. AI Bot Mode: 3 Difficulty Levels (Easy, Medium, Hard/Pro AI)
+ * 3. Undo Move (Xin đi lại nước cờ)
+ * 4. AI Hint System (Gợi ý nước đi chiến thuật)
+ * 5. Quick Floating Emoji Reactions Bar
  */
 
 (function () {
@@ -78,11 +81,14 @@
   const turnTimerDisplay = document.getElementById('turn-timer');
 
   const boardContainer = document.getElementById('caro-board');
+  const boardSection = document.querySelector('.board-section');
   const movesListContainer = document.getElementById('moves-list');
   const chatMessagesContainer = document.getElementById('chat-messages');
   const chatForm = document.getElementById('chat-form');
   const chatInput = document.getElementById('chat-input');
 
+  const btnUndo = document.getElementById('btn-undo');
+  const btnHint = document.getElementById('btn-hint');
   const btnRematch = document.getElementById('btn-rematch');
   const btnSurrender = document.getElementById('btn-surrender');
   const btnLeaveRoom = document.getElementById('btn-leave-room');
@@ -241,6 +247,19 @@
         handleGameOver();
       });
 
+      socket.on('undo_requested', (data) => {
+        if (confirm(`Đối thủ (${data.requesterName}) xin rút lại nước đi trước. Bạn có đồng ý không?`)) {
+          socket.emit('accept_undo');
+        } else {
+          showToast('Bạn đã từ chối yêu cầu đi lại của đối thủ.');
+        }
+      });
+
+      socket.on('emoji_reaction', (data) => {
+        spawnFloatingEmoji(data.emoji);
+        playSound('move');
+      });
+
       socket.on('chat_message', (msg) => {
         appendChatMessage(msg);
       });
@@ -295,7 +314,6 @@
     playSound('join');
     appendSystemMessage(`Bắt đầu trận đấu với Máy AI (${diffText})!`);
 
-    // If bot moves first
     if (!isPlayerFirst) {
       triggerBotTurn();
     }
@@ -319,7 +337,6 @@
     const size = board.length;
     const humanSymbol = aiSymbol === 'X' ? 'O' : 'X';
 
-    // 1. Collect candidate cells (adjacent to existing marks within distance 2)
     const candidates = [];
     let hasAnyMove = false;
 
@@ -328,7 +345,6 @@
         if (board[r][c] !== null) {
           hasAnyMove = true;
         } else {
-          // Check if near an occupied cell
           let isNear = false;
           for (let dr = -2; dr <= 2 && !isNear; dr++) {
             for (let dc = -2; dc <= 2 && !isNear; dc++) {
@@ -344,13 +360,11 @@
       }
     }
 
-    // First move of the game -> Play center
     if (!hasAnyMove || candidates.length === 0) {
       const center = Math.floor(size / 2);
       return { row: center, col: center };
     }
 
-    // Easy mode 25% random choice
     if (difficulty === 'easy' && Math.random() < 0.25) {
       return candidates[Math.floor(Math.random() * candidates.length)];
     }
@@ -361,19 +375,16 @@
     const defenseWeight = difficulty === 'hard' ? 1.25 : difficulty === 'medium' ? 0.95 : 0.6;
 
     for (const pos of candidates) {
-      // Evaluate Attack Score
       board[pos.row][pos.col] = aiSymbol;
       const attackScore = evaluateCellScore(board, pos.row, pos.col, aiSymbol, blockedRule);
       board[pos.row][pos.col] = null;
 
-      // Evaluate Defense Score
       board[pos.row][pos.col] = humanSymbol;
       const defenseScore = evaluateCellScore(board, pos.row, pos.col, humanSymbol, blockedRule);
       board[pos.row][pos.col] = null;
 
       let score = attackScore + (defenseScore * defenseWeight);
 
-      // Add slight randomness for variety in Easy/Medium
       if (difficulty === 'easy') {
         score += Math.random() * 200;
       } else if (difficulty === 'medium') {
@@ -412,7 +423,7 @@
 
       if (count >= 5) {
         if (blockedRule && count === 5 && openEnds === 0) continue;
-        totalScore += 100000; // Immediate 5-in-a-row win
+        totalScore += 100000;
       } else if (count === 4) {
         if (openEnds === 2) totalScore += 20000;
         else if (openEnds === 1) totalScore += 4000;
@@ -524,6 +535,17 @@
       resetPeerGame();
     } else if (data.type === 'SURRENDER') {
       handlePeerSurrender(data.role);
+    } else if (data.type === 'REQUEST_UNDO') {
+      if (confirm(`Đối thủ xin rút lại nước đi vừa rồi. Bạn có đồng ý không?`)) {
+        undoLastMoves();
+        sendPeerData({ type: 'ACCEPT_UNDO' });
+      }
+    } else if (data.type === 'ACCEPT_UNDO') {
+      undoLastMoves();
+      showToast('Đối thủ đã đồng ý cho bạn rút lại nước đi!');
+    } else if (data.type === 'EMOJI') {
+      spawnFloatingEmoji(data.emoji);
+      playSound('move');
     }
   }
 
@@ -564,6 +586,75 @@
     } else if (gameMode === 'bot' && roomData.turn === botRole) {
       triggerBotTurn();
     }
+  }
+
+  // --- UNDO MOVE FEATURE ---
+  function handleUndoRequest() {
+    if (roomData.status !== 'playing' || roomData.moveHistory.length === 0) return;
+
+    if (gameMode === 'bot') {
+      undoLastMoves();
+      showToast('⏪ Đã rút lại nước cờ trước!');
+    } else if (socket) {
+      socket.emit('request_undo');
+      showToast('⏳ Đã gửi yêu cầu đi lại tới đối thủ...');
+    } else if (isPeerMode) {
+      sendPeerData({ type: 'REQUEST_UNDO' });
+      showToast('⏳ Đã gửi yêu cầu đi lại tới đối thủ...');
+    }
+  }
+
+  function undoLastMoves() {
+    if (roomData.moveHistory.length === 0) return;
+
+    const popCount = (gameMode === 'bot' || roomData.moveHistory.length >= 2) ? 2 : 1;
+    for (let i = 0; i < popCount; i++) {
+      const last = roomData.moveHistory.pop();
+      if (last) {
+        roomData.board[last.row][last.col] = null;
+      }
+    }
+
+    roomData.lastMove = roomData.moveHistory.length > 0 ? roomData.moveHistory[room.moveHistory.length - 1] : null;
+    roomData.turn = playerInfo.role;
+    updateUI();
+  }
+
+  // --- AI HINT FEATURE ---
+  function handleAIHint() {
+    if (roomData.status !== 'playing' || playerInfo.role !== roomData.turn) {
+      showToast('Chỉ có thể lấy gợi ý khi đến lượt của bạn!', 'error');
+      return;
+    }
+
+    const hint = calculateBestBotMove(roomData.board, playerInfo.role, 'hard', roomData.blockedRule);
+    if (hint) {
+      // Find corresponding cell element and highlight it
+      const cells = boardContainer.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        if (parseInt(cell.dataset.row) === hint.row && parseInt(cell.dataset.col) === hint.col) {
+          cell.classList.add('hint-cell');
+          setTimeout(() => cell.classList.remove('hint-cell'), 3500);
+        }
+      });
+      showToast(`💡 Gợi ý nước đi ngon: Hàng ${hint.row + 1}, Cột ${hint.col + 1}`);
+      playSound('join');
+    }
+  }
+
+  // --- FLOATING EMOJI ANIMATION ---
+  function spawnFloatingEmoji(emoji) {
+    const el = document.createElement('div');
+    el.className = 'floating-emoji';
+    el.textContent = emoji;
+
+    // Randomize horizontal starting position near bottom
+    const leftOffset = Math.floor(Math.random() * 60) + 20;
+    el.style.left = `${leftOffset}%`;
+    el.style.bottom = '40px';
+
+    boardSection.appendChild(el);
+    setTimeout(() => el.remove(), 1800);
   }
 
   function resetPeerGame() {
@@ -669,6 +760,7 @@
     }
 
     const isPlayer = playerInfo.role === 'X' || playerInfo.role === 'O';
+    btnUndo.disabled = !isPlayer || roomData.status !== 'playing' || roomData.moveHistory.length === 0;
     btnRematch.disabled = !isPlayer || roomData.status !== 'ended';
     btnSurrender.disabled = !isPlayer || roomData.status !== 'playing';
 
@@ -817,7 +909,6 @@
   function setupEventListeners() {
     document.addEventListener('click', initAudio, { once: true });
 
-    // Mode Switcher Tabs
     modeBtnOnline.addEventListener('click', () => {
       gameMode = 'online';
       modeBtnOnline.classList.add('active');
@@ -888,6 +979,24 @@
       showModal();
     });
 
+    btnUndo.addEventListener('click', handleUndoRequest);
+    btnHint.addEventListener('click', handleAIHint);
+
+    // Quick Emoji Reaction Buttons
+    document.querySelectorAll('.emoji-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const emoji = btn.dataset.emoji;
+        spawnFloatingEmoji(emoji);
+        playSound('move');
+
+        if (socket && gameMode === 'online') {
+          socket.emit('send_emoji', { emoji });
+        } else if (isPeerMode && gameMode === 'online') {
+          sendPeerData({ type: 'EMOJI', emoji });
+        }
+      });
+    });
+
     btnRematch.addEventListener('click', () => {
       if (gameMode === 'bot') {
         resetPeerGame();
@@ -926,7 +1035,6 @@
 
       if (gameMode === 'bot') {
         appendChatMessage(chatPayload);
-        // Bot auto reply in chat occasionally
         if (Math.random() < 0.4) {
           setTimeout(() => {
             const botReplies = ['Nước đi hay đấy!', 'Thử sức với tôi xem!', 'Tập trung nhé!', 'Chúc may mắn!'];

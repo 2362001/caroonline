@@ -753,7 +753,92 @@ body {
   100% { transform: scale(1.1); box-shadow: 0 0 18px rgba(192, 132, 252, 0.9); }
 }
 
-/* Moves List */
+/* Rank Card & Stats Modal */
+.rank-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 14px 18px;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+.rank-icon {
+  font-size: 32px;
+}
+
+.rank-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #fbbf24;
+  letter-spacing: 0.5px;
+}
+
+.rank-info h3 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stat-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 800;
+  color: #00f3ff;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.stats-details-row {
+  display: flex;
+  justify-content: space-around;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.win-text { color: #10b981; }
+.lose-text { color: #ef4444; }
+.draw-text { color: #fbbf24; }
+
+/* BGM Active Button Effect */
+#btn-bgm-toggle.active {
+  background: rgba(0, 243, 255, 0.2);
+  border-color: #00f3ff;
+  color: #00f3ff;
+  animation: pulseBgm 1.5s infinite alternate;
+}
+
+@keyframes pulseBgm {
+  0% { box-shadow: 0 0 5px rgba(0, 243, 255, 0.4); }
+  100% { box-shadow: 0 0 15px rgba(0, 243, 255, 0.8); }
+}
+
+/* Modal & Toasts */
 .moves-list {
   flex: 1;
   overflow-y: auto;

@@ -48,10 +48,16 @@
       </div>
 
       <div class="header-actions">
-        <button id="btn-sound-toggle" class="btn btn-icon" title="Bật/Tắt âm thanh">
+        <button id="btn-bgm-toggle" class="btn btn-icon" title="Bật/Tắt Nhạc Nền BGM">
+          <i class="fa-solid fa-music"></i>
+        </button>
+        <button id="btn-sound-toggle" class="btn btn-icon" title="Bật/Tắt hiệu ứng âm thanh">
           <i class="fa-solid fa-volume-high"></i>
         </button>
-        <button id="btn-change-name" class="btn btn-icon" title="Đổi tên người chơi">
+        <button id="btn-stats-toggle" class="btn btn-icon" title="Xem Bảng Thống Kê & Chuỗi Thắng">
+          <i class="fa-solid fa-chart-simple"></i>
+        </button>
+        <button id="btn-change-name" class="btn btn-icon" title="Đổi tên & Cài đặt phòng">
           <i class="fa-solid fa-user-pen"></i>
         </button>
       </div>
@@ -257,6 +263,56 @@
         <div class="modal-footer">
           <button id="btn-start-game" class="btn btn-primary btn-large">
             <i class="fa-solid fa-play"></i> VÀO PHÒNG CHƠI NGAY
+          </button>
+        </div>
+      </div>
+    </div>
+  <!-- Modal: Game Statistics & Win Streaks -->
+    <div class="modal-backdrop hidden" id="modal-stats">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2><i class="fa-solid fa-trophy" style="color: #fbbf24;"></i> THỐNG KÊ & BẢNG BẬC</h2>
+          <p>Thống kê kết quả thi đấu và thành tích của bạn</p>
+        </div>
+        <div class="modal-body">
+          <!-- Rank Badge -->
+          <div class="rank-card">
+            <div class="rank-icon" id="stats-rank-icon">🌱</div>
+            <div class="rank-info">
+              <span class="rank-label">Danh Hiệu Cờ Thủ</span>
+              <h3 id="stats-rank-name">🌱 Cờ Thủ Tập Sự</h3>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-value" id="stats-streak-current">0 🔥</span>
+              <span class="stat-label">Chuỗi Thắng Hiện Tại</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stats-streak-max">0 🏆</span>
+              <span class="stat-label">Chuỗi Thắng Cao Nhất</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stats-win-rate">0%</span>
+              <span class="stat-label">Tỉ Lệ Thắng</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="stats-total-matches">0</span>
+              <span class="stat-label">Tổng Số Trận</span>
+            </div>
+          </div>
+
+          <div class="stats-details-row">
+            <span class="stat-detail win-text">Thắng: <strong id="stats-wins">0</strong></span>
+            <span class="stat-detail lose-text">Thua: <strong id="stats-losses">0</strong></span>
+            <span class="stat-detail draw-text">Hòa: <strong id="stats-draws">0</strong></span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-close-stats" class="btn btn-secondary btn-large">
+            <i class="fa-solid fa-xmark"></i> Đóng
           </button>
         </div>
       </div>

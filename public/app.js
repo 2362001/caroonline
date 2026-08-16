@@ -6,6 +6,8 @@
  * 3. Undo Move (Xin đi lại nước cờ)
  * 4. AI Hint System (Gợi ý nước đi chiến thuật)
  * 5. Quick Floating Emoji Reactions Bar
+ * 6. 🔥 Win Streak & Statistics System (Theo dõi chuỗi thắng, tỉ lệ thắng & Bảng Hạng)
+ * 7. 🎵 Ambient Lofi BGM Synthesizer (Nhạc nền Chill êm dịu bằng Web Audio API)
  */
 
 (function () {
@@ -43,12 +45,25 @@
     moveHistory: []
   };
 
+  // User Stats State
+  let userStats = {
+    totalMatches: 0,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    currentStreak: 0,
+    maxStreak: 0
+  };
+
   let soundEnabled = true;
+  let bgmEnabled = false;
+  let bgmInterval = null;
   let turnTimerInterval = null;
   let turnTimeLeft = 30;
 
   // DOM Elements
   const modalWelcome = document.getElementById('modal-welcome');
+  const modalStats = document.getElementById('modal-stats');
   const inputPlayerName = document.getElementById('input-player-name');
   const inputRoomId = document.getElementById('input-room-id');
   const selectBoardSize = document.getElementById('select-board-size');
@@ -67,6 +82,9 @@
   const displayRoomId = document.getElementById('display-room-id');
   const btnCopyLink = document.getElementById('btn-copy-link');
   const btnSoundToggle = document.getElementById('btn-sound-toggle');
+  const btnBgmToggle = document.getElementById('btn-bgm-toggle');
+  const btnStatsToggle = document.getElementById('btn-stats-toggle');
+  const btnCloseStats = document.getElementById('btn-close-stats');
   const btnChangeName = document.getElementById('btn-change-name');
 
   const cardPlayerX = document.getElementById('card-player-x');
@@ -151,12 +169,90 @@
     }
   }
 
+  // --- AMBIENT BGM SYNTHESIZER ---
+  function toggleBGM() {
+    initAudio();
+    bgmEnabled = !bgmEnabled;
+    btnBgmToggle.classList.toggle('active', bgmEnabled);
+
+    if (bgmEnabled) {
+      startAmbientBGM();
+      showToast('🎵 Nhạc nền Chill BGM: BẬT');
+    } else {
+      stopAmbientBGM();
+      showToast('🎵 Nhạc nền BGM: TẮT');
+    }
+  }
+
+  function startAmbientBGM() {
+    stopAmbientBGM();
+    const chords = [
+      [261.63, 329.63, 392.00, 493.88], // Cmaj7
+      [220.00, 261.63, 329.63, 392.00], // Am7
+      [293.66, 349.23, 440.00, 523.25], // Dm7
+      [196.00, 246.94, 293.66, 349.23]  // G7
+    ];
+    let chordIdx = 0;
+
+    function playChord() {
+      if (!bgmEnabled || !audioCtx) return;
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const currentChord = chords[chordIdx];
+        chordIdx = (chordIdx + 1) % chords.length;
+
+        currentChord.forEach(freq => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now);
+
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.025, now + 1.2);
+          gain.gain.linearRampToValueAtTime(0.001, now + 4.5);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 4.6);
+        });
+      } catch (e) {
+        console.warn('BGM error:', e);
+      }
+    }
+
+    playChord();
+    bgmInterval = setInterval(playChord, 4600);
+  }
+
+  function stopAmbientBGM() {
+    if (bgmInterval) {
+      clearInterval(bgmInterval);
+      bgmInterval = null;
+    }
+  }
+
   // --- INITIALIZATION ---
   function init() {
+    loadUserStats();
     setupRandomPlayerName();
     parseUrlRoomId();
     setupEventListeners();
     initSocketConnection();
+  }
+
+  function loadUserStats() {
+    const saved = localStorage.getItem('caro_user_stats');
+    if (saved) {
+      try {
+        userStats = JSON.parse(saved);
+      } catch (e) {}
+    }
+  }
+
+  function saveUserStats() {
+    localStorage.setItem('caro_user_stats', JSON.stringify(userStats));
   }
 
   function setupRandomPlayerName() {
@@ -629,7 +725,6 @@
 
     const hint = calculateBestBotMove(roomData.board, playerInfo.role, 'hard', roomData.blockedRule);
     if (hint) {
-      // Find corresponding cell element and highlight it
       const cells = boardContainer.querySelectorAll('.cell');
       cells.forEach(cell => {
         if (parseInt(cell.dataset.row) === hint.row && parseInt(cell.dataset.col) === hint.col) {
@@ -648,13 +743,74 @@
     el.className = 'floating-emoji';
     el.textContent = emoji;
 
-    // Randomize horizontal starting position near bottom
     const leftOffset = Math.floor(Math.random() * 60) + 20;
     el.style.left = `${leftOffset}%`;
     el.style.bottom = '40px';
 
     boardSection.appendChild(el);
     setTimeout(() => el.remove(), 1800);
+  }
+
+  // --- GAME OVER & STATS UPDATER ---
+  function handleGameOver() {
+    if (playerInfo.role === 'X' || playerInfo.role === 'O') {
+      userStats.totalMatches++;
+
+      if (roomData.winner === playerInfo.role) {
+        userStats.wins++;
+        userStats.currentStreak++;
+        userStats.maxStreak = Math.max(userStats.maxStreak, userStats.currentStreak);
+        playSound('win');
+        triggerConfetti();
+      } else if (roomData.winner === 'DRAW') {
+        userStats.draws++;
+        playSound('join');
+      } else {
+        userStats.losses++;
+        userStats.currentStreak = 0;
+        playSound('lose');
+      }
+      saveUserStats();
+    }
+  }
+
+  function renderStatsUI() {
+    const total = userStats.totalMatches;
+    const wins = userStats.wins;
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+    document.getElementById('stats-streak-current').textContent = `${userStats.currentStreak} 🔥`;
+    document.getElementById('stats-streak-max').textContent = `${userStats.maxStreak} 🏆`;
+    document.getElementById('stats-win-rate').textContent = `${winRate}%`;
+    document.getElementById('stats-total-matches').textContent = total;
+
+    document.getElementById('stats-wins').textContent = userStats.wins;
+    document.getElementById('stats-losses').textContent = userStats.losses;
+    document.getElementById('stats-draws').textContent = userStats.draws;
+
+    // Calculate Rank Title
+    let rankIcon = '🌱';
+    let rankName = '🌱 Cờ Thủ Tập Sự';
+
+    if (wins >= 25 || userStats.maxStreak >= 10) {
+      rankIcon = '👑';
+      rankName = '👑 Thần Cờ Gomoku';
+    } else if (wins >= 10 || userStats.maxStreak >= 5) {
+      rankIcon = '🔥';
+      rankName = '🔥 Đại Sư Bàn Cờ';
+    } else if (wins >= 3 || userStats.maxStreak >= 2) {
+      rankIcon = '⚡';
+      rankName = '⚡ Cao Thủ Caro';
+    }
+
+    document.getElementById('stats-rank-icon').textContent = rankIcon;
+    document.getElementById('stats-rank-name').textContent = rankName;
+  }
+
+  function triggerConfetti() {
+    if (typeof confetti === 'function') {
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+    }
   }
 
   function resetPeerGame() {
@@ -864,23 +1020,6 @@
     }
   }
 
-  function handleGameOver() {
-    if (roomData.winner === playerInfo.role) {
-      playSound('win');
-      triggerConfetti();
-    } else if (roomData.winner === 'DRAW') {
-      playSound('join');
-    } else if (playerInfo.role === 'X' || playerInfo.role === 'O') {
-      playSound('lose');
-    }
-  }
-
-  function triggerConfetti() {
-    if (typeof confetti === 'function') {
-      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
-    }
-  }
-
   function appendChatMessage({ sender, role, text, time }) {
     const div = document.createElement('div');
     div.className = `chat-bubble role-${role}`;
@@ -975,6 +1114,17 @@
       showToast(soundEnabled ? 'Âm thanh: BẬT' : 'Âm thanh: TẮT');
     });
 
+    btnBgmToggle.addEventListener('click', toggleBGM);
+
+    btnStatsToggle.addEventListener('click', () => {
+      renderStatsUI();
+      modalStats.classList.remove('hidden');
+    });
+
+    btnCloseStats.addEventListener('click', () => {
+      modalStats.classList.add('hidden');
+    });
+
     btnChangeName.addEventListener('click', () => {
       showModal();
     });
@@ -982,7 +1132,6 @@
     btnUndo.addEventListener('click', handleUndoRequest);
     btnHint.addEventListener('click', handleAIHint);
 
-    // Quick Emoji Reaction Buttons
     document.querySelectorAll('.emoji-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const emoji = btn.dataset.emoji;

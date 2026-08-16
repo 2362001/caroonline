@@ -1,6 +1,8 @@
 /**
  * CARO ONLINE - MAIN FRONTEND APPLICATION ENGINE
- * Supports dual mode: Socket.io Server (Primary) & PeerJS WebRTC P2P (Fallback)
+ * Dual Network Engine:
+ * 1. Socket.io Server (Primary when Node backend runs)
+ * 2. PeerJS WebRTC P2P (Fallback for Static Vercel/Netlify hosting)
  */
 
 (function () {
@@ -170,15 +172,20 @@
   // --- SOCKET & NETWORK ENGINE ---
   function initSocketConnection() {
     if (typeof io !== 'undefined') {
-      socket = io();
+      socket = io({
+        timeout: 2500,
+        reconnectionAttempts: 1
+      });
 
       socket.on('connect', () => {
-        console.log('⚡ Kết nối Socket.io thành công!');
-        updateStatusBanner('Đã kết nối server. Sẵn sàng vào phòng!');
+        console.log('⚡ Kết nối Socket.io server thành công!');
+        updateStatusBanner('Đã kết nối Socket Server!');
       });
 
       socket.on('connect_error', () => {
-        console.warn('Không thể kết nối Socket.io server. Chuyển sang P2P PeerJS...');
+        console.log('🌐 Socket server không khả dụng. Chuyển tự động sang WebRTC PeerJS P2P!');
+        socket.disconnect();
+        socket = null;
         initPeerJSFallback();
       });
 
@@ -230,29 +237,230 @@
     }
   }
 
+  // --- WEBRTC PEERJS P2P ENGINE (For Vercel / Netlify Static Hosting) ---
   function initPeerJSFallback() {
     isPeerMode = true;
-    console.log('🌐 Bật chế độ WebRTC P2P PeerJS');
-    updateStatusBanner('Chế độ P2P PeerJS (Không dùng server)');
+    updateStatusBanner('🌐 Đang khởi tạo kết nối P2P PeerJS...');
+  }
+
+  function startPeerJS(roomId, playerName, boardSize, blockedRule) {
+    if (typeof Peer === 'undefined') {
+      showToast('Không tải được thư viện PeerJS!', 'error');
+      return;
+    }
+
+    const hostPeerId = `CARO-ROOM-${roomId}-HOST`;
+    const guestPeerId = `CARO-ROOM-${roomId}-GUEST`;
+
+    // Try becoming host first
+    peer = new Peer(hostPeerId);
+
+    peer.on('open', (id) => {
+      console.log('👑 Bạn là Chủ Phòng (Quân X) P2P:', id);
+      playerInfo.role = 'X';
+      initPeerRoomState(roomId, boardSize, blockedRule, playerName);
+      updateStatusBanner('⏳ Đang chờ người chơi 2 bấm vào Link phòng...');
+      hideModal();
+      updateUI();
+      showToast('Đã tạo phòng P2P! Gửi link cho bạn bè để cùng chơi.');
+    });
+
+    peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        // Host ID is taken -> We are Guest (Player O)
+        console.log('🎮 Phòng đã có Chủ. Đang kết nối với tư cách Khách (Quân O)...');
+        peer = new Peer(guestPeerId);
+
+        peer.on('open', () => {
+          playerInfo.role = 'O';
+          peerConn = peer.connect(hostPeerId);
+          setupPeerConnection(peerConn, playerName);
+        });
+
+        peer.on('error', (e) => {
+          showToast('Phòng chơi đã đầy hoặc không khả dụng!', 'error');
+        });
+      } else {
+        console.warn('PeerJS error:', err);
+      }
+    });
+
+    peer.on('connection', (conn) => {
+      peerConn = conn;
+      console.log('🤝 Khách (Quân O) đã kết nối vào phòng!');
+      setupPeerConnection(conn, playerName);
+    });
+  }
+
+  function initPeerRoomState(roomId, boardSize, blockedRule, hostName) {
+    boardSize = parseInt(boardSize) || 15;
+    roomData = {
+      roomId,
+      boardSize,
+      board: createEmptyBoard(boardSize),
+      players: { X: { name: hostName, score: 0 }, O: null },
+      turn: 'X',
+      status: 'waiting',
+      winner: null,
+      winningLine: null,
+      blockedRule: blockedRule !== false,
+      lastMove: null,
+      moveHistory: []
+    };
+  }
+
+  function setupPeerConnection(conn, myName) {
+    conn.on('open', () => {
+      hideModal();
+      if (playerInfo.role === 'O') {
+        // Send join event to Host
+        conn.send({ type: 'JOIN', name: myName });
+      }
+    });
+
+    conn.on('data', (data) => {
+      handlePeerData(data);
+    });
+
+    conn.on('close', () => {
+      showToast('Đối thủ đã ngắt kết nối!', 'error');
+      roomData.status = 'waiting';
+      updateUI();
+    });
+  }
+
+  function handlePeerData(data) {
+    if (data.type === 'JOIN') {
+      roomData.players.O = { name: data.name, score: 0 };
+      roomData.status = 'playing';
+      updateUI();
+      playSound('join');
+      sendPeerState();
+      appendSystemMessage(`Người chơi O (${data.name}) đã vào phòng!`);
+    } else if (data.type === 'SYNC_STATE') {
+      roomData = data.roomState;
+      updateUI();
+    } else if (data.type === 'MOVE') {
+      executeMove(data.row, data.col, data.role);
+    } else if (data.type === 'CHAT') {
+      appendChatMessage(data);
+    } else if (data.type === 'REMATCH') {
+      resetPeerGame();
+    } else if (data.type === 'SURRENDER') {
+      handlePeerSurrender(data.role);
+    }
+  }
+
+  function sendPeerData(data) {
+    if (peerConn && peerConn.open) {
+      peerConn.send(data);
+    }
+  }
+
+  function sendPeerState() {
+    sendPeerData({ type: 'SYNC_STATE', roomState: roomData });
+  }
+
+  function executeMove(row, col, role) {
+    if (roomData.board[row][col] !== null) return;
+    roomData.board[row][col] = role;
+    roomData.lastMove = { row, col };
+    roomData.moveHistory.push({ row, col, symbol: role });
+
+    const winLine = checkWin(roomData.board, row, col, role, roomData.blockedRule);
+    if (winLine) {
+      roomData.status = 'ended';
+      roomData.winner = role;
+      roomData.winningLine = winLine;
+      if (roomData.players[role]) roomData.players[role].score++;
+    } else if (isBoardFull(roomData.board)) {
+      roomData.status = 'ended';
+      roomData.winner = 'DRAW';
+    } else {
+      roomData.turn = role === 'X' ? 'O' : 'X';
+    }
+
+    playSound('move');
+    updateUI();
+    if (roomData.status === 'ended') handleGameOver();
+  }
+
+  function resetPeerGame() {
+    roomData.board = createEmptyBoard(roomData.boardSize);
+    roomData.status = 'playing';
+    roomData.turn = 'X';
+    roomData.winner = null;
+    roomData.winningLine = null;
+    roomData.lastMove = null;
+    roomData.moveHistory = [];
+    updateUI();
+    showToast('Ván mới đã bắt đầu!');
+    playSound('join');
+  }
+
+  function handlePeerSurrender(role) {
+    const winnerRole = role === 'X' ? 'O' : 'X';
+    roomData.status = 'ended';
+    roomData.winner = winnerRole;
+    if (roomData.players[winnerRole]) roomData.players[winnerRole].score++;
+    updateUI();
+    handleGameOver();
+    appendSystemMessage(`Người chơi ${role} đã nhận đầu hàng!`);
+  }
+
+  function createEmptyBoard(size) {
+    const board = [];
+    for (let r = 0; r < size; r++) {
+      board.push(new Array(size).fill(null));
+    }
+    return board;
+  }
+
+  function checkWin(board, row, col, symbol, blockedRule = true) {
+    const size = board.length;
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+
+    for (const [dr, dc] of directions) {
+      let count = 1;
+      const line = [{ row, col }];
+
+      let r = row + dr, c = col + dc;
+      while (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === symbol) {
+        count++; line.push({ row: r, col: c }); r += dr; c += dc;
+      }
+      const headBlocked = (r >= 0 && r < size && c >= 0 && c < size && board[r][c] !== null && board[r][c] !== symbol);
+
+      r = row - dr; c = col - dc;
+      while (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === symbol) {
+        count++; line.unshift({ row: r, col: c }); r -= dr; c -= dc;
+      }
+      const tailBlocked = (r >= 0 && r < size && c >= 0 && c < size && board[r][c] !== null && board[r][c] !== symbol);
+
+      if (count >= 5) {
+        if (blockedRule && count === 5 && headBlocked && tailBlocked) continue;
+        return line;
+      }
+    }
+    return null;
+  }
+
+  function isBoardFull(board) {
+    return board.every(row => row.every(cell => cell !== null));
   }
 
   // --- UI UPDATER & RENDERER ---
   function updateUI() {
-    // Header & Room Info
     displayRoomId.textContent = roomData.roomId || '-----';
     updateUrlRoomParam(roomData.roomId);
 
-    // Player Cards
     namePlayerX.textContent = roomData.players.X ? roomData.players.X.name : 'Đang chờ...';
     namePlayerO.textContent = roomData.players.O ? roomData.players.O.name : 'Đang chờ...';
     scorePlayerX.textContent = roomData.players.X ? roomData.players.X.score : 0;
     scorePlayerO.textContent = roomData.players.O ? roomData.players.O.score : 0;
 
-    // Turn Indicators
     cardPlayerX.classList.toggle('active-turn', roomData.status === 'playing' && roomData.turn === 'X');
     cardPlayerO.classList.toggle('active-turn', roomData.status === 'playing' && roomData.turn === 'O');
 
-    // Status Banner
     if (roomData.status === 'waiting') {
       updateStatusBanner('⏳ Đang chờ đối thủ vào phòng qua Link...', 'warning');
       stopTurnTimer();
@@ -272,12 +480,10 @@
       }
     }
 
-    // Action Buttons State
     const isPlayer = playerInfo.role === 'X' || playerInfo.role === 'O';
     btnRematch.disabled = !isPlayer || roomData.status !== 'ended';
     btnSurrender.disabled = !isPlayer || roomData.status !== 'playing';
 
-    // Render Board
     renderBoard();
     renderMovesList();
   }
@@ -306,12 +512,10 @@
           cell.classList.add(val === 'X' ? 'cell-x' : 'cell-o', 'occupied');
         }
 
-        // Highlight last move
         if (roomData.lastMove && roomData.lastMove.row === r && roomData.lastMove.col === c) {
           cell.classList.add('last-move');
         }
 
-        // Highlight winning line
         if (roomData.winningLine) {
           const isWinCell = roomData.winningLine.some(item => item.row === r && item.col === c);
           if (isWinCell) cell.classList.add('winning-cell');
@@ -333,6 +537,9 @@
 
     if (socket) {
       socket.emit('make_move', { row: r, col: c });
+    } else if (isPeerMode) {
+      executeMove(r, c, playerInfo.role);
+      sendPeerData({ type: 'MOVE', row: r, col: c, role: playerInfo.role });
     }
   }
 
@@ -364,7 +571,6 @@
 
       if (turnTimeLeft <= 0) {
         stopTurnTimer();
-        // Time expired auto-switch turn or handle timeout
       }
     }, 1000);
   }
@@ -376,7 +582,6 @@
     }
   }
 
-  // --- GAME OVER & CELEBRATION ---
   function handleGameOver() {
     if (roomData.winner === playerInfo.role) {
       playSound('win');
@@ -390,15 +595,10 @@
 
   function triggerConfetti() {
     if (typeof confetti === 'function') {
-      confetti({
-        particleCount: 120,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
     }
   }
 
-  // --- CHAT SYSTEM ---
   function appendChatMessage({ sender, role, text, time }) {
     const div = document.createElement('div');
     div.className = `chat-bubble role-${role}`;
@@ -425,15 +625,12 @@
 
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
-    // Audio initialization on first user interaction
     document.addEventListener('click', initAudio, { once: true });
 
-    // Generate room button
     btnGenerateRoom.addEventListener('click', () => {
       inputRoomId.value = generateRandomRoomId();
     });
 
-    // Start game button
     btnStartGame.addEventListener('click', () => {
       const name = inputPlayerName.value.trim() || 'Cờ Thủ';
       const roomId = inputRoomId.value.trim().toUpperCase();
@@ -450,10 +647,11 @@
 
       if (socket) {
         socket.emit('join_room', { roomId, playerName: name, boardSize, blockedRule });
+      } else if (isPeerMode) {
+        startPeerJS(roomId, name, boardSize, blockedRule);
       }
     });
 
-    // Copy Invite Link Button
     btnCopyLink.addEventListener('click', () => {
       const roomId = roomData.roomId || inputRoomId.value;
       const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
@@ -465,26 +663,33 @@
       });
     });
 
-    // Sound Toggle
     btnSoundToggle.addEventListener('click', () => {
       soundEnabled = !soundEnabled;
       btnSoundToggle.innerHTML = soundEnabled ? '<i class="fa-solid fa-volume-high"></i>' : '<i class="fa-solid fa-volume-xmark"></i>';
       showToast(soundEnabled ? 'Âm thanh: BẬT' : 'Âm thanh: TẮT');
     });
 
-    // Change Name
     btnChangeName.addEventListener('click', () => {
       showModal();
     });
 
-    // Action Buttons
     btnRematch.addEventListener('click', () => {
-      if (socket) socket.emit('request_rematch');
+      if (socket) {
+        socket.emit('request_rematch');
+      } else if (isPeerMode) {
+        resetPeerGame();
+        sendPeerData({ type: 'REMATCH' });
+      }
     });
 
     btnSurrender.addEventListener('click', () => {
       if (confirm('Bạn có chắc chắn muốn nhận đầu hàng ván này?')) {
-        if (socket) socket.emit('surrender');
+        if (socket) {
+          socket.emit('surrender');
+        } else if (isPeerMode) {
+          handlePeerSurrender(playerInfo.role);
+          sendPeerData({ type: 'SURRENDER', role: playerInfo.role });
+        }
       }
     });
 
@@ -492,19 +697,23 @@
       showModal();
     });
 
-    // Chat Form
     chatForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const msg = chatInput.value.trim();
       if (!msg) return;
 
+      const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const chatPayload = { sender: playerInfo.name, role: playerInfo.role, text: msg, time };
+
       if (socket) {
         socket.emit('send_chat', { message: msg });
-        chatInput.value = '';
+      } else if (isPeerMode) {
+        appendChatMessage(chatPayload);
+        sendPeerData({ type: 'CHAT', ...chatPayload });
       }
+      chatInput.value = '';
     });
 
-    // Sidebar Tabs Switcher
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -540,6 +749,5 @@
     }, 3500);
   }
 
-  // Start app
   window.addEventListener('DOMContentLoaded', init);
 })();

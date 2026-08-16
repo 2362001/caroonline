@@ -1,0 +1,18 @@
+{
+  "name": "caro-online",
+  "version": "1.0.0",
+  "description": "Game Cờ Caro (XO) Online 2 người chơi qua Link - Realtime Multiplayer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["caro", "gomoku", "xo", "online", "game", "socket.io", "peerjs"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

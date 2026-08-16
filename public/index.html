@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cờ Caro Online - Realtime XO 2 Người Chơi</title>
+  <meta name="description" content="Game Cờ Caro Online 2 người chơi qua Link siêu tốc, không cần đăng ký. Giao diện đẹp mắt, âm thanh sống động!">
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- Socket.io & PeerJS Client Libraries -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header / Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="logo-icon">
+          <span class="x-mark">X</span><span class="o-mark">O</span>
+        </div>
+        <div class="brand-text">
+          <h1>CARO <span>ONLINE</span></h1>
+          <p class="subtitle">Thách đấu 2 người qua Link</p>
+        </div>
+      </div>
+
+      <div class="room-info-bar">
+        <div class="room-badge">
+          <i class="fa-solid fa-door-open"></i>
+          Phòng: <span id="display-room-id">-----</span>
+        </div>
+        <button id="btn-copy-link" class="btn btn-copy" title="Sao chép link gửi bạn bè">
+          <i class="fa-solid fa-link"></i> Sao chép Link mời
+        </button>
+      </div>
+
+      <div class="header-actions">
+        <button id="btn-sound-toggle" class="btn btn-icon" title="Bật/Tắt âm thanh">
+          <i class="fa-solid fa-volume-high"></i>
+        </button>
+        <button id="btn-change-name" class="btn btn-icon" title="Đổi tên người chơi">
+          <i class="fa-solid fa-user-pen"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="game-layout">
+      <!-- Left Sidebar: Players & Scoreboard -->
+      <aside class="sidebar left-sidebar">
+        <!-- Player X Card -->
+        <div class="player-card player-x" id="card-player-x">
+          <div class="player-avatar">
+            <span class="symbol-badge x-bg">X</span>
+            <div class="avatar-glow"></div>
+          </div>
+          <div class="player-details">
+            <span class="player-role">QUÂN X (Đi trước)</span>
+            <h3 class="player-name" id="name-player-x">Đang chờ...</h3>
+            <div class="score-box">Thắng: <span id="score-player-x">0</span></div>
+          </div>
+          <div class="turn-indicator">Đến lượt</div>
+        </div>
+
+        <!-- VS Divider & Status Banner -->
+        <div class="vs-container">
+          <div class="vs-circle">VS</div>
+          <div class="timer-display" id="timer-box">
+            <i class="fa-regular fa-clock"></i> <span id="turn-timer">30</span>s
+          </div>
+        </div>
+
+        <!-- Player O Card -->
+        <div class="player-card player-o" id="card-player-o">
+          <div class="player-avatar">
+            <span class="symbol-badge o-bg">O</span>
+            <div class="avatar-glow"></div>
+          </div>
+          <div class="player-details">
+            <span class="player-role">QUÂN O (Đi sau)</span>
+            <h3 class="player-name" id="name-player-o">Đang chờ...</h3>
+            <div class="score-box">Thắng: <span id="score-player-o">0</span></div>
+          </div>
+          <div class="turn-indicator">Đến lượt</div>
+        </div>
+
+        <!-- In-game Actions -->
+        <div class="action-panel">
+          <button id="btn-rematch" class="btn btn-action btn-rematch" disabled>
+            <i class="fa-solid fa-rotate-right"></i> Chơi Lại Ván Mới
+          </button>
+          <button id="btn-surrender" class="btn btn-action btn-surrender" disabled>
+            <i class="fa-solid fa-flag"></i> Đầu Hàng
+          </button>
+          <button id="btn-leave-room" class="btn btn-action btn-leave">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Đổi Phòng
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center: Board Game -->
+      <section class="board-section">
+        <!-- Game Status Announcement Bar -->
+        <div class="status-banner" id="status-banner">
+          <i class="fa-solid fa-spinner fa-spin"></i> Đang kết nối tới server...
+        </div>
+
+        <!-- Turn Progress Bar -->
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="turn-progress-bar"></div>
+        </div>
+
+        <!-- Board Wrapper -->
+        <div class="board-wrapper" id="board-wrapper">
+          <div class="board" id="caro-board">
+            <!-- Board cells will be rendered dynamically by JavaScript -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Sidebar: Chat & Move History -->
+      <aside class="sidebar right-sidebar">
+        <!-- Tab Controls -->
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="tab-chat">
+            <i class="fa-solid fa-comments"></i> Trò Chuyện
+          </button>
+          <button class="tab-btn" data-tab="tab-moves">
+            <i class="fa-solid fa-list-ol"></i> Nước Đi
+          </button>
+        </div>
+
+        <!-- Tab 1: Chat Panel -->
+        <div class="tab-content active" id="tab-chat">
+          <div class="chat-messages" id="chat-messages">
+            <div class="system-msg">Chào mừng bạn đến với Cờ Caro Online! Gửi link phòng cho bạn bè để cùng chơi.</div>
+          </div>
+          <form id="chat-form" class="chat-form">
+            <input type="text" id="chat-input" placeholder="Nhập tin nhắn..." maxlength="100" autocomplete="off">
+            <button type="submit" class="btn btn-send">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </form>
+        </div>
+
+        <!-- Tab 2: Moves History Panel -->
+        <div class="tab-content" id="tab-moves">
+          <div class="moves-list" id="moves-list">
+            <div class="empty-moves">Chưa có nước đi nào</div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Toast Notification Overlay -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Modal: Welcome / Create / Join Room -->
+    <div class="modal-backdrop" id="modal-welcome">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2><i class="fa-solid fa-gamepad"></i> VÀO PHÒNG CHƠI CARO</h2>
+          <p>Nhập tên và tạo phòng hoặc tham gia cùng bạn bè qua Link!</p>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="input-player-name"><i class="fa-solid fa-user"></i> Tên người chơi của bạn:</label>
+            <input type="text" id="input-player-name" placeholder="Ví dụ: Cờ Thủ Pro" maxlength="15" value="">
+          </div>
+
+          <div class="form-group">
+            <label for="input-room-id"><i class="fa-solid fa-key"></i> Mã phòng (ID):</label>
+            <div class="room-input-group">
+              <input type="text" id="input-room-id" placeholder="Tự tạo hoặc nhập mã phòng..." maxlength="10" style="text-transform: uppercase;">
+              <button id="btn-generate-room" class="btn btn-secondary" title="Tạo mã phòng ngẫu nhiên">
+                <i class="fa-solid fa-dice"></i> Ngẫu nhiên
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="select-board-size"><i class="fa-solid fa-border-all"></i> Kích thước bàn cờ:</label>
+            <select id="select-board-size" class="custom-select">
+              <option value="15" selected>15 x 15 (Chuẩn Caro Gomoku)</option>
+              <option value="20">20 x 20 (Rộng hơn)</option>
+              <option value="3">3 x 3 (XO Cổ điển)</option>
+            </select>
+          </div>
+
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="check-blocked-rule" checked>
+              <span class="custom-checkbox"></span>
+              <span>Áp dụng luật <strong>Chặn 2 đầu không thắng</strong></span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-start-game" class="btn btn-primary btn-large">
+            <i class="fa-solid fa-play"></i> VÀO PHÒNG CHƠI NGAY
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="confetti-canvas"></canvas>
+  <script src="app.js"></script>
+</body>
+</html>

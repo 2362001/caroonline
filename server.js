@@ -28,6 +28,39 @@ function createEmptyBoard(size) {
   return board;
 }
 
+function expandBoardIfNeeded(room, row, col) {
+  let addTop = (row <= 1) ? 4 : 0;
+  let addBottom = (row >= room.boardSize - 2) ? 4 : 0;
+  let addLeft = (col <= 1) ? 4 : 0;
+  let addRight = (col >= room.boardSize - 2) ? 4 : 0;
+
+  if (addTop === 0 && addBottom === 0 && addLeft === 0 && addRight === 0) {
+    return { row, col };
+  }
+
+  const oldSize = room.boardSize;
+  const newSize = oldSize + addTop + addBottom + addLeft + addRight;
+  const newBoard = createEmptyBoard(newSize);
+
+  for (let r = 0; r < oldSize; r++) {
+    for (let c = 0; c < oldSize; c++) {
+      if (room.board[r][c] !== null) {
+        newBoard[r + addTop][c + addLeft] = room.board[r][c];
+      }
+    }
+  }
+
+  room.boardSize = newSize;
+  room.board = newBoard;
+
+  room.moveHistory.forEach(m => {
+    m.row += addTop;
+    m.col += addLeft;
+  });
+
+  return { row: row + addTop, col: col + addLeft };
+}
+
 function checkWin(board, row, col, symbol, blockedRule = true) {
   const size = board.length;
   const directions = [
@@ -90,11 +123,15 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     socket.roomId = roomId;
 
+    const isInfinite = boardSize === 'infinite';
+    const initialSize = isInfinite ? 15 : (parseInt(boardSize) || 15);
+
     if (!rooms.has(roomId)) {
       rooms.set(roomId, {
         roomId,
-        boardSize: parseInt(boardSize) || 15,
-        board: createEmptyBoard(parseInt(boardSize) || 15),
+        isInfinite,
+        boardSize: initialSize,
+        board: createEmptyBoard(initialSize),
         players: { X: null, O: null },
         spectators: [],
         turn: 'X',
@@ -154,13 +191,20 @@ io.on('connection', (socket) => {
 
     const room = rooms.get(roomId);
     if (room.status !== 'playing') return;
-    if (socket.role !== room.turn) return; // Not your turn
+    if (socket.role !== room.turn) return;
 
     row = parseInt(row);
     col = parseInt(col);
 
     if (row < 0 || row >= room.boardSize || col < 0 || col >= room.boardSize) return;
-    if (room.board[row][col] !== null) return; // Cell already occupied
+    if (room.board[row][col] !== null) return;
+
+    // Check auto-expansion if Infinite Mode
+    if (room.isInfinite) {
+      const shifted = expandBoardIfNeeded(room, row, col);
+      row = shifted.row;
+      col = shifted.col;
+    }
 
     // Execute move
     room.board[row][col] = socket.role;
@@ -180,7 +224,6 @@ io.on('connection', (socket) => {
       room.status = 'ended';
       room.winner = 'DRAW';
     } else {
-      // Switch turn
       room.turn = room.turn === 'X' ? 'O' : 'X';
     }
 

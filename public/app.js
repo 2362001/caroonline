@@ -3,11 +3,12 @@
  * Features:
  * 1. Dual Network Engine: Socket.io Server & PeerJS WebRTC P2P (For Vercel/Netlify static hosting)
  * 2. AI Bot Mode: 3 Difficulty Levels (Easy, Medium, Hard/Pro AI)
- * 3. Undo Move (Xin đi lại nước cờ)
- * 4. AI Hint System (Gợi ý nước đi chiến thuật)
- * 5. Quick Floating Emoji Reactions Bar
- * 6. 🔥 Win Streak & Statistics System (Theo dõi chuỗi thắng, tỉ lệ thắng & Bảng Hạng)
- * 7. 🎵 Ambient Lofi BGM Synthesizer (Nhạc nền Chill êm dịu bằng Web Audio API)
+ * 3. ♾️ Auto-Expanding Infinite Board Mode (Bàn cờ tự mở rộng khi đánh sát mép)
+ * 4. Undo Move (Xin đi lại nước cờ)
+ * 5. AI Hint System (Gợi ý nước đi chiến thuật)
+ * 6. Quick Floating Emoji Reactions Bar
+ * 7. 🔥 Win Streak & Statistics System (Theo dõi chuỗi thắng & Bảng Hạng)
+ * 8. 🎵 Ambient Lofi BGM Synthesizer (Nhạc nền Chill êm dịu)
  */
 
 (function () {
@@ -33,6 +34,7 @@
 
   let roomData = {
     roomId: null,
+    isInfinite: false,
     boardSize: 15,
     board: [],
     turn: 'X',
@@ -374,11 +376,13 @@
   }
 
   // --- AI BOT MODE ENGINE ---
-  function startBotGame(playerName, boardSize, difficulty, turnChoice, blockedRule) {
+  function startBotGame(playerName, boardSizeChoice, difficulty, turnChoice, blockedRule) {
     gameMode = 'bot';
     botDifficulty = difficulty;
     botTurnChoice = turnChoice;
-    boardSize = parseInt(boardSize) || 15;
+    
+    const isInfinite = boardSizeChoice === 'infinite';
+    const boardSize = isInfinite ? 15 : (parseInt(boardSizeChoice) || 15);
 
     const isPlayerFirst = turnChoice === 'player_first';
     playerInfo.role = isPlayerFirst ? 'X' : 'O';
@@ -389,6 +393,7 @@
 
     roomData = {
       roomId: 'VS-AI-BOT',
+      isInfinite,
       boardSize,
       board: createEmptyBoard(boardSize),
       players: {
@@ -406,7 +411,7 @@
 
     hideModal();
     updateUI();
-    showToast(`Đã bắt đầu đấu với Máy (${diffText})!`);
+    showToast(`Đã bắt đầu đấu với Máy (${diffText})! ${isInfinite ? '♾️ Chế độ bàn cờ Vô Hạn.' : ''}`);
     playSound('join');
     appendSystemMessage(`Bắt đầu trận đấu với Máy AI (${diffText})!`);
 
@@ -536,7 +541,7 @@
   }
 
   // --- WEBRTC PEERJS P2P ENGINE ---
-  function startPeerJS(roomId, playerName, boardSize, blockedRule) {
+  function startPeerJS(roomId, playerName, boardSizeChoice, blockedRule) {
     if (typeof Peer === 'undefined') {
       showToast('Không tải được thư viện PeerJS!', 'error');
       return;
@@ -550,7 +555,7 @@
     peer.on('open', (id) => {
       console.log('👑 Chủ Phòng (Quân X) P2P:', id);
       playerInfo.role = 'X';
-      initPeerRoomState(roomId, boardSize, blockedRule, playerName);
+      initPeerRoomState(roomId, boardSizeChoice, blockedRule, playerName);
       updateStatusBanner('⏳ Đang chờ người chơi 2 bấm vào Link phòng...');
       hideModal();
       updateUI();
@@ -576,10 +581,13 @@
     });
   }
 
-  function initPeerRoomState(roomId, boardSize, blockedRule, hostName) {
-    boardSize = parseInt(boardSize) || 15;
+  function initPeerRoomState(roomId, boardSizeChoice, blockedRule, hostName) {
+    const isInfinite = boardSizeChoice === 'infinite';
+    const boardSize = isInfinite ? 15 : (parseInt(boardSizeChoice) || 15);
+
     roomData = {
       roomId,
+      isInfinite,
       boardSize,
       board: createEmptyBoard(boardSize),
       players: { X: { name: hostName, score: 0 }, O: null },
@@ -655,8 +663,58 @@
     sendPeerData({ type: 'SYNC_STATE', roomState: roomData });
   }
 
+  // --- AUTO-EXPANDING INFINITE BOARD MECHANISM ---
+  function expandClientBoardIfNeeded(row, col) {
+    let addTop = (row <= 1) ? 4 : 0;
+    let addBottom = (row >= roomData.boardSize - 2) ? 4 : 0;
+    let addLeft = (col <= 1) ? 4 : 0;
+    let addRight = (col >= roomData.boardSize - 2) ? 4 : 0;
+
+    if (addTop === 0 && addBottom === 0 && addLeft === 0 && addRight === 0) {
+      return { row, col };
+    }
+
+    const oldSize = roomData.boardSize;
+    const newSize = oldSize + addTop + addBottom + addLeft + addRight;
+    const newBoard = createEmptyBoard(newSize);
+
+    for (let r = 0; r < oldSize; r++) {
+      for (let c = 0; c < oldSize; c++) {
+        if (roomData.board[r] && roomData.board[r][c] !== null) {
+          newBoard[r + addTop][c + addLeft] = roomData.board[r][c];
+        }
+      }
+    }
+
+    roomData.boardSize = newSize;
+    roomData.board = newBoard;
+
+    if (roomData.lastMove) {
+      roomData.lastMove.row += addTop;
+      roomData.lastMove.col += addLeft;
+    }
+
+    if (roomData.moveHistory) {
+      roomData.moveHistory.forEach(m => {
+        m.row += addTop;
+        m.col += addLeft;
+      });
+    }
+
+    showToast('♾️ Bàn cờ đã tự động mở rộng!');
+    return { row: row + addTop, col: col + addLeft };
+  }
+
   function executeMove(row, col, role) {
     if (roomData.board[row][col] !== null) return;
+
+    // Expand board if Infinite Mode
+    if (roomData.isInfinite) {
+      const shifted = expandClientBoardIfNeeded(row, col);
+      row = shifted.row;
+      col = shifted.col;
+    }
+
     roomData.board[row][col] = role;
     roomData.lastMove = { row, col };
     roomData.moveHistory.push({ row, col, symbol: role });
@@ -711,7 +769,7 @@
       }
     }
 
-    roomData.lastMove = roomData.moveHistory.length > 0 ? roomData.moveHistory[room.moveHistory.length - 1] : null;
+    roomData.lastMove = roomData.moveHistory.length > 0 ? roomData.moveHistory[roomData.moveHistory.length - 1] : null;
     roomData.turn = playerInfo.role;
     updateUI();
   }
@@ -788,7 +846,6 @@
     document.getElementById('stats-losses').textContent = userStats.losses;
     document.getElementById('stats-draws').textContent = userStats.draws;
 
-    // Calculate Rank Title
     let rankIcon = '🌱';
     let rankName = '🌱 Cờ Thủ Tập Sự';
 
@@ -1073,7 +1130,7 @@
     btnStartGame.addEventListener('click', () => {
       const name = inputPlayerName.value.trim() || 'Cờ Thủ';
       const roomId = inputRoomId.value.trim().toUpperCase();
-      const boardSize = selectBoardSize.value;
+      const boardSizeChoice = selectBoardSize.value;
       const blockedRule = checkBlockedRule.checked;
 
       playerInfo.name = name;
@@ -1082,7 +1139,7 @@
       if (gameMode === 'bot') {
         const difficulty = selectBotDifficulty.value;
         const turnChoice = selectBotTurn.value;
-        startBotGame(name, boardSize, difficulty, turnChoice, blockedRule);
+        startBotGame(name, boardSizeChoice, difficulty, turnChoice, blockedRule);
       } else {
         if (!roomId) {
           showToast('Vui lòng nhập mã phòng!', 'error');
@@ -1090,9 +1147,9 @@
         }
 
         if (socket) {
-          socket.emit('join_room', { roomId, playerName: name, boardSize, blockedRule });
+          socket.emit('join_room', { roomId, playerName: name, boardSize: boardSizeChoice, blockedRule });
         } else {
-          startPeerJS(roomId, name, boardSize, blockedRule);
+          startPeerJS(roomId, name, boardSizeChoice, blockedRule);
         }
       }
     });

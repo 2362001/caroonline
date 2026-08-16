@@ -1,8 +1,8 @@
 /**
  * CARO ONLINE - MAIN FRONTEND APPLICATION ENGINE
- * Dual Network Engine:
- * 1. Socket.io Server (Primary when Node backend runs)
- * 2. PeerJS WebRTC P2P (Fallback for Static Vercel/Netlify hosting)
+ * Features:
+ * 1. Dual Network Engine: Socket.io Server & PeerJS WebRTC P2P (For Vercel/Netlify static hosting)
+ * 2. AI Bot Mode: 3 Difficulty Levels (Easy, Medium, Hard/Pro AI)
  */
 
 (function () {
@@ -13,6 +13,12 @@
   let peer = null;
   let peerConn = null;
   let isPeerMode = false;
+
+  // Game Mode State
+  let gameMode = 'online'; // 'online' or 'bot'
+  let botDifficulty = 'medium'; // 'easy', 'medium', 'hard'
+  let botTurnChoice = 'player_first'; // 'player_first' or 'bot_first'
+  let botRole = 'O'; // 'O' or 'X'
 
   let playerInfo = {
     name: 'Cờ Thủ',
@@ -46,6 +52,14 @@
   const checkBlockedRule = document.getElementById('check-blocked-rule');
   const btnStartGame = document.getElementById('btn-start-game');
   const btnGenerateRoom = document.getElementById('btn-generate-room');
+
+  const modeBtnOnline = document.getElementById('mode-btn-online');
+  const modeBtnBot = document.getElementById('mode-btn-bot');
+  const groupRoomId = document.getElementById('group-room-id');
+  const groupBotDifficulty = document.getElementById('group-bot-difficulty');
+  const groupBotTurn = document.getElementById('group-bot-turn');
+  const selectBotDifficulty = document.getElementById('select-bot-difficulty');
+  const selectBotTurn = document.getElementById('select-bot-turn');
 
   const displayRoomId = document.getElementById('display-room-id');
   const btnCopyLink = document.getElementById('btn-copy-link');
@@ -183,9 +197,11 @@
       });
 
       socket.on('connect_error', () => {
-        console.log('🌐 Socket server không khả dụng. Chuyển tự động sang WebRTC PeerJS P2P!');
-        socket.disconnect();
-        socket = null;
+        console.log('🌐 Socket server không khả dụng. Chuyển sang P2P PeerJS / AI Bot Mode');
+        if (socket) {
+          socket.disconnect();
+          socket = null;
+        }
         initPeerJSFallback();
       });
 
@@ -237,12 +253,182 @@
     }
   }
 
-  // --- WEBRTC PEERJS P2P ENGINE (For Vercel / Netlify Static Hosting) ---
   function initPeerJSFallback() {
     isPeerMode = true;
-    updateStatusBanner('🌐 Đang khởi tạo kết nối P2P PeerJS...');
+    updateStatusBanner('🌐 Chế độ WebRTC P2P / Đấu AI sẵn sàng');
   }
 
+  // --- AI BOT MODE ENGINE ---
+  function startBotGame(playerName, boardSize, difficulty, turnChoice, blockedRule) {
+    gameMode = 'bot';
+    botDifficulty = difficulty;
+    botTurnChoice = turnChoice;
+    boardSize = parseInt(boardSize) || 15;
+
+    const isPlayerFirst = turnChoice === 'player_first';
+    playerInfo.role = isPlayerFirst ? 'X' : 'O';
+    botRole = isPlayerFirst ? 'O' : 'X';
+
+    const diffText = difficulty === 'easy' ? 'Dễ' : difficulty === 'medium' ? 'Trung Bình' : 'Khó (Siêu AI)';
+    const botName = `🤖 Máy AI (${diffText})`;
+
+    roomData = {
+      roomId: 'VS-AI-BOT',
+      boardSize,
+      board: createEmptyBoard(boardSize),
+      players: {
+        X: { name: isPlayerFirst ? playerName : botName, score: 0 },
+        O: { name: isPlayerFirst ? botName : playerName, score: 0 }
+      },
+      turn: 'X',
+      status: 'playing',
+      winner: null,
+      winningLine: null,
+      blockedRule: blockedRule !== false,
+      lastMove: null,
+      moveHistory: []
+    };
+
+    hideModal();
+    updateUI();
+    showToast(`Đã bắt đầu đấu với Máy (${diffText})!`);
+    playSound('join');
+    appendSystemMessage(`Bắt đầu trận đấu với Máy AI (${diffText})!`);
+
+    // If bot moves first
+    if (!isPlayerFirst) {
+      triggerBotTurn();
+    }
+  }
+
+  function triggerBotTurn() {
+    if (roomData.status !== 'playing' || roomData.turn !== botRole) return;
+
+    updateStatusBanner('🤖 Máy AI đang tính toán...', 'warning');
+
+    setTimeout(() => {
+      const bestMove = calculateBestBotMove(roomData.board, botRole, botDifficulty, roomData.blockedRule);
+      if (bestMove) {
+        executeMove(bestMove.row, bestMove.col, botRole);
+      }
+    }, 450);
+  }
+
+  // --- CARO AI BOT HEURISTIC ALGORITHM ---
+  function calculateBestBotMove(board, aiSymbol, difficulty, blockedRule) {
+    const size = board.length;
+    const humanSymbol = aiSymbol === 'X' ? 'O' : 'X';
+
+    // 1. Collect candidate cells (adjacent to existing marks within distance 2)
+    const candidates = [];
+    let hasAnyMove = false;
+
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (board[r][c] !== null) {
+          hasAnyMove = true;
+        } else {
+          // Check if near an occupied cell
+          let isNear = false;
+          for (let dr = -2; dr <= 2 && !isNear; dr++) {
+            for (let dc = -2; dc <= 2 && !isNear; dc++) {
+              if (dr === 0 && dc === 0) continue;
+              const nr = r + dr, nc = c + dc;
+              if (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] !== null) {
+                isNear = true;
+              }
+            }
+          }
+          if (isNear) candidates.push({ row: r, col: c });
+        }
+      }
+    }
+
+    // First move of the game -> Play center
+    if (!hasAnyMove || candidates.length === 0) {
+      const center = Math.floor(size / 2);
+      return { row: center, col: center };
+    }
+
+    // Easy mode 25% random choice
+    if (difficulty === 'easy' && Math.random() < 0.25) {
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    let bestScore = -Infinity;
+    let bestMove = candidates[0];
+
+    const defenseWeight = difficulty === 'hard' ? 1.25 : difficulty === 'medium' ? 0.95 : 0.6;
+
+    for (const pos of candidates) {
+      // Evaluate Attack Score
+      board[pos.row][pos.col] = aiSymbol;
+      const attackScore = evaluateCellScore(board, pos.row, pos.col, aiSymbol, blockedRule);
+      board[pos.row][pos.col] = null;
+
+      // Evaluate Defense Score
+      board[pos.row][pos.col] = humanSymbol;
+      const defenseScore = evaluateCellScore(board, pos.row, pos.col, humanSymbol, blockedRule);
+      board[pos.row][pos.col] = null;
+
+      let score = attackScore + (defenseScore * defenseWeight);
+
+      // Add slight randomness for variety in Easy/Medium
+      if (difficulty === 'easy') {
+        score += Math.random() * 200;
+      } else if (difficulty === 'medium') {
+        score += Math.random() * 20;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = pos;
+      }
+    }
+
+    return bestMove;
+  }
+
+  function evaluateCellScore(board, row, col, symbol, blockedRule) {
+    const size = board.length;
+    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    let totalScore = 0;
+
+    for (const [dr, dc] of directions) {
+      let count = 1;
+      let r = row + dr, c = col + dc;
+      while (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === symbol) {
+        count++; r += dr; c += dc;
+      }
+      const headOpen = (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === null);
+
+      r = row - dr; c = col - dc;
+      while (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === symbol) {
+        count++; r -= dr; c -= dc;
+      }
+      const tailOpen = (r >= 0 && r < size && c >= 0 && c < size && board[r][c] === null);
+
+      const openEnds = (headOpen ? 1 : 0) + (tailOpen ? 1 : 0);
+
+      if (count >= 5) {
+        if (blockedRule && count === 5 && openEnds === 0) continue;
+        totalScore += 100000; // Immediate 5-in-a-row win
+      } else if (count === 4) {
+        if (openEnds === 2) totalScore += 20000;
+        else if (openEnds === 1) totalScore += 4000;
+      } else if (count === 3) {
+        if (openEnds === 2) totalScore += 5000;
+        else if (openEnds === 1) totalScore += 800;
+      } else if (count === 2) {
+        if (openEnds === 2) totalScore += 300;
+        else if (openEnds === 1) totalScore += 50;
+      }
+    }
+
+    return totalScore;
+  }
+
+  // --- WEBRTC PEERJS P2P ENGINE ---
   function startPeerJS(roomId, playerName, boardSize, blockedRule) {
     if (typeof Peer === 'undefined') {
       showToast('Không tải được thư viện PeerJS!', 'error');
@@ -252,11 +438,10 @@
     const hostPeerId = `CARO-ROOM-${roomId}-HOST`;
     const guestPeerId = `CARO-ROOM-${roomId}-GUEST`;
 
-    // Try becoming host first
     peer = new Peer(hostPeerId);
 
     peer.on('open', (id) => {
-      console.log('👑 Bạn là Chủ Phòng (Quân X) P2P:', id);
+      console.log('👑 Chủ Phòng (Quân X) P2P:', id);
       playerInfo.role = 'X';
       initPeerRoomState(roomId, boardSize, blockedRule, playerName);
       updateStatusBanner('⏳ Đang chờ người chơi 2 bấm vào Link phòng...');
@@ -267,18 +452,11 @@
 
     peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
-        // Host ID is taken -> We are Guest (Player O)
-        console.log('🎮 Phòng đã có Chủ. Đang kết nối với tư cách Khách (Quân O)...');
         peer = new Peer(guestPeerId);
-
         peer.on('open', () => {
           playerInfo.role = 'O';
           peerConn = peer.connect(hostPeerId);
           setupPeerConnection(peerConn, playerName);
-        });
-
-        peer.on('error', (e) => {
-          showToast('Phòng chơi đã đầy hoặc không khả dụng!', 'error');
         });
       } else {
         console.warn('PeerJS error:', err);
@@ -287,7 +465,6 @@
 
     peer.on('connection', (conn) => {
       peerConn = conn;
-      console.log('🤝 Khách (Quân O) đã kết nối vào phòng!');
       setupPeerConnection(conn, playerName);
     });
   }
@@ -313,7 +490,6 @@
     conn.on('open', () => {
       hideModal();
       if (playerInfo.role === 'O') {
-        // Send join event to Host
         conn.send({ type: 'JOIN', name: myName });
       }
     });
@@ -382,7 +558,12 @@
 
     playSound('move');
     updateUI();
-    if (roomData.status === 'ended') handleGameOver();
+
+    if (roomData.status === 'ended') {
+      handleGameOver();
+    } else if (gameMode === 'bot' && roomData.turn === botRole) {
+      triggerBotTurn();
+    }
   }
 
   function resetPeerGame() {
@@ -396,6 +577,10 @@
     updateUI();
     showToast('Ván mới đã bắt đầu!');
     playSound('join');
+
+    if (gameMode === 'bot' && botTurnChoice === 'bot_first') {
+      triggerBotTurn();
+    }
   }
 
   function handlePeerSurrender(role) {
@@ -466,7 +651,10 @@
       stopTurnTimer();
     } else if (roomData.status === 'playing') {
       const isMyTurn = playerInfo.role === roomData.turn;
-      const turnText = isMyTurn ? '🔥 ĐẾN LƯỢT BẠN ĐI!' : `Đang chờ ${roomData.turn === 'X' ? roomData.players.X?.name : roomData.players.O?.name} suy nghĩ...`;
+      let turnText = isMyTurn ? '🔥 ĐẾN LƯỢT BẠN ĐI!' : `Đang chờ ${roomData.turn === 'X' ? roomData.players.X?.name : roomData.players.O?.name} suy nghĩ...`;
+      if (gameMode === 'bot' && !isMyTurn) {
+        turnText = '🤖 Máy AI đang tính toán nước đi...';
+      }
       updateStatusBanner(turnText, isMyTurn ? 'my-turn' : 'normal');
       startTurnTimer();
     } else if (roomData.status === 'ended') {
@@ -537,9 +725,11 @@
 
     if (socket) {
       socket.emit('make_move', { row: r, col: c });
-    } else if (isPeerMode) {
+    } else {
       executeMove(r, c, playerInfo.role);
-      sendPeerData({ type: 'MOVE', row: r, col: c, role: playerInfo.role });
+      if (isPeerMode && gameMode === 'online') {
+        sendPeerData({ type: 'MOVE', row: r, col: c, role: playerInfo.role });
+      }
     }
   }
 
@@ -627,6 +817,25 @@
   function setupEventListeners() {
     document.addEventListener('click', initAudio, { once: true });
 
+    // Mode Switcher Tabs
+    modeBtnOnline.addEventListener('click', () => {
+      gameMode = 'online';
+      modeBtnOnline.classList.add('active');
+      modeBtnBot.classList.remove('active');
+      groupRoomId.classList.remove('hidden');
+      groupBotDifficulty.classList.add('hidden');
+      groupBotTurn.classList.add('hidden');
+    });
+
+    modeBtnBot.addEventListener('click', () => {
+      gameMode = 'bot';
+      modeBtnBot.classList.add('active');
+      modeBtnOnline.classList.remove('active');
+      groupRoomId.classList.add('hidden');
+      groupBotDifficulty.classList.remove('hidden');
+      groupBotTurn.classList.remove('hidden');
+    });
+
     btnGenerateRoom.addEventListener('click', () => {
       inputRoomId.value = generateRandomRoomId();
     });
@@ -640,15 +849,21 @@
       playerInfo.name = name;
       localStorage.setItem('caro_player_name', name);
 
-      if (!roomId) {
-        showToast('Vui lòng nhập mã phòng!', 'error');
-        return;
-      }
+      if (gameMode === 'bot') {
+        const difficulty = selectBotDifficulty.value;
+        const turnChoice = selectBotTurn.value;
+        startBotGame(name, boardSize, difficulty, turnChoice, blockedRule);
+      } else {
+        if (!roomId) {
+          showToast('Vui lòng nhập mã phòng!', 'error');
+          return;
+        }
 
-      if (socket) {
-        socket.emit('join_room', { roomId, playerName: name, boardSize, blockedRule });
-      } else if (isPeerMode) {
-        startPeerJS(roomId, name, boardSize, blockedRule);
+        if (socket) {
+          socket.emit('join_room', { roomId, playerName: name, boardSize, blockedRule });
+        } else {
+          startPeerJS(roomId, name, boardSize, blockedRule);
+        }
       }
     });
 
@@ -674,7 +889,9 @@
     });
 
     btnRematch.addEventListener('click', () => {
-      if (socket) {
+      if (gameMode === 'bot') {
+        resetPeerGame();
+      } else if (socket) {
         socket.emit('request_rematch');
       } else if (isPeerMode) {
         resetPeerGame();
@@ -684,7 +901,9 @@
 
     btnSurrender.addEventListener('click', () => {
       if (confirm('Bạn có chắc chắn muốn nhận đầu hàng ván này?')) {
-        if (socket) {
+        if (gameMode === 'bot') {
+          handlePeerSurrender(playerInfo.role);
+        } else if (socket) {
           socket.emit('surrender');
         } else if (isPeerMode) {
           handlePeerSurrender(playerInfo.role);
@@ -705,7 +924,17 @@
       const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
       const chatPayload = { sender: playerInfo.name, role: playerInfo.role, text: msg, time };
 
-      if (socket) {
+      if (gameMode === 'bot') {
+        appendChatMessage(chatPayload);
+        // Bot auto reply in chat occasionally
+        if (Math.random() < 0.4) {
+          setTimeout(() => {
+            const botReplies = ['Nước đi hay đấy!', 'Thử sức với tôi xem!', 'Tập trung nhé!', 'Chúc may mắn!'];
+            const reply = botReplies[Math.floor(Math.random() * botReplies.length)];
+            appendChatMessage({ sender: '🤖 Máy AI', role: botRole, text: reply, time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) });
+          }, 800);
+        }
+      } else if (socket) {
         socket.emit('send_chat', { message: msg });
       } else if (isPeerMode) {
         appendChatMessage(chatPayload);
@@ -725,7 +954,7 @@
   }
 
   function updateUrlRoomParam(roomId) {
-    if (!roomId) return;
+    if (!roomId || gameMode === 'bot') return;
     const newUrl = `${window.location.pathname}?room=${roomId}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
   }

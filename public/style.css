@@ -747,6 +747,45 @@ body {
   margin-top: 4px;
 }
 
+/* Mode Switcher Tabs in Modal */
+.mode-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.mode-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: var(--transition-fast);
+}
+
+.mode-tab.active {
+  background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(59, 130, 246, 0.2));
+  color: #00f3ff;
+  border: 1px solid rgba(0, 243, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 243, 255, 0.15);
+}
+
+.bot-settings.hidden, .form-group.hidden {
+  display: none !important;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;

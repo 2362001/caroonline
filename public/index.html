@@ -176,12 +176,23 @@
           <p>Nhập tên và tạo phòng hoặc tham gia cùng bạn bè qua Link!</p>
         </div>
         <div class="modal-body">
+          <!-- Game Mode Switcher -->
+          <div class="mode-selector">
+            <button type="button" class="mode-tab active" id="mode-btn-online" data-mode="online">
+              <i class="fa-solid fa-earth-americas"></i> Đấu Online (Qua Link)
+            </button>
+            <button type="button" class="mode-tab" id="mode-btn-bot" data-mode="bot">
+              <i class="fa-solid fa-robot"></i> Đánh Với Máy (AI)
+            </button>
+          </div>
+
           <div class="form-group">
             <label for="input-player-name"><i class="fa-solid fa-user"></i> Tên người chơi của bạn:</label>
             <input type="text" id="input-player-name" placeholder="Ví dụ: Cờ Thủ Pro" maxlength="15" value="">
           </div>
 
-          <div class="form-group">
+          <!-- Online Mode: Room ID input -->
+          <div class="form-group" id="group-room-id">
             <label for="input-room-id"><i class="fa-solid fa-key"></i> Mã phòng (ID):</label>
             <div class="room-input-group">
               <input type="text" id="input-room-id" placeholder="Tự tạo hoặc nhập mã phòng..." maxlength="10" style="text-transform: uppercase;">
@@ -189,6 +200,24 @@
                 <i class="fa-solid fa-dice"></i> Ngẫu nhiên
               </button>
             </div>
+          </div>
+
+          <!-- Bot AI Settings -->
+          <div class="form-group bot-settings hidden" id="group-bot-difficulty">
+            <label for="select-bot-difficulty"><i class="fa-solid fa-brain"></i> Cấp độ khó của Máy:</label>
+            <select id="select-bot-difficulty" class="custom-select">
+              <option value="easy">🌱 Dễ (Tập chơi)</option>
+              <option value="medium" selected>⚡ Trung Bình (Thử thách)</option>
+              <option value="hard">🔥 Khó (AI Siêu Trí Tuệ Pro)</option>
+            </select>
+          </div>
+
+          <div class="form-group bot-settings hidden" id="group-bot-turn">
+            <label for="select-bot-turn"><i class="fa-solid fa-flag"></i> Quyền đi trước:</label>
+            <select id="select-bot-turn" class="custom-select">
+              <option value="player_first" selected>Bạn đi trước (Quân X)</option>
+              <option value="bot_first">Máy đi trước (Quân X)</option>
+            </select>
           </div>
 
           <div class="form-group">

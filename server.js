@@ -242,17 +242,22 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (socket.role !== 'X' && socket.role !== 'O') return;
 
+    // Rule: Winner of previous game goes first
+    const nextFirstTurn = (room.winner && (room.winner === 'X' || room.winner === 'O')) ? room.winner : 'X';
+
     // Reset board
     room.board = createEmptyBoard(room.boardSize);
     room.status = (room.players.X && room.players.O) ? 'playing' : 'waiting';
-    room.turn = 'X';
+    room.turn = nextFirstTurn;
     room.winner = null;
     room.winningLine = null;
     room.moveHistory = [];
 
+    const winnerName = nextFirstTurn === 'X' ? room.players.X?.name : room.players.O?.name;
+
     io.to(roomId).emit('game_reset', getRoomState(room));
     io.to(roomId).emit('system_message', {
-      text: `${socket.role === 'X' ? room.players.X?.name : room.players.O?.name} đã yêu cầu chơi lại ván mới!`
+      text: `${socket.role === 'X' ? room.players.X?.name : room.players.O?.name} đã yêu cầu chơi lại! 🏆 Người thắng (${winnerName}) được quyền đi trước.`
     });
   });
 

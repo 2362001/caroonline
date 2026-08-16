@@ -871,18 +871,20 @@
   }
 
   function resetPeerGame() {
+    const nextFirstTurn = (roomData.winner && (roomData.winner === 'X' || roomData.winner === 'O')) ? roomData.winner : 'X';
+
     roomData.board = createEmptyBoard(roomData.boardSize);
     roomData.status = 'playing';
-    roomData.turn = 'X';
+    roomData.turn = nextFirstTurn;
     roomData.winner = null;
     roomData.winningLine = null;
     roomData.lastMove = null;
     roomData.moveHistory = [];
     updateUI();
-    showToast('Ván mới đã bắt đầu!');
+    showToast(`Ván mới đã bắt đầu! 🏆 Người thắng (${nextFirstTurn}) được đi trước.`);
     playSound('join');
 
-    if (gameMode === 'bot' && botTurnChoice === 'bot_first') {
+    if (gameMode === 'bot' && roomData.turn === botRole) {
       triggerBotTurn();
     }
   }
